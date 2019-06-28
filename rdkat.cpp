@@ -222,6 +222,10 @@ inline void getAccessibilityInfo(AtkObject *obj, std::string &name, std::string 
 
 inline static void RDKAt::printEventInfo(std::string &klass, std::string &major, std::string &minor,
         guint32 d1, guint32 d2, const void *val, int type) {
+
+    if (!is_log_level_enabled(RDK_AT::VERBOSE_LEVEL))
+        return;
+
     bool c = false;
     std::stringstream ss;
 
@@ -241,10 +245,13 @@ inline static void RDKAt::printEventInfo(std::string &klass, std::string &major,
         PRINT_HELPER(ss, c, "data", std::string((char *)val));
     }
 
-    RDKLOG_INFO("%s", ss.str().c_str());
+    RDKLOG_VERBOSE("%s", ss.str().c_str());
 }
 
 inline void RDKAt::printAccessibilityInfo(std::string &name, std::string &desc, std::string &role) {
+    if (!is_log_level_enabled(RDK_AT::VERBOSE_LEVEL))
+        return;
+
     bool c = false;
     std::stringstream ss;
 
@@ -252,7 +259,7 @@ inline void RDKAt::printAccessibilityInfo(std::string &name, std::string &desc, 
     PRINT_HELPER(ss, c, "desc", desc);
     PRINT_HELPER(ss, c, "role", role);
 
-    RDKLOG_INFO("%s", ss.str().c_str());
+    RDKLOG_VERBOSE("%s", ss.str().c_str());
 }
 
 std::string getCellDescription(AtkObject *cell, AtkRole role) {
@@ -374,7 +381,7 @@ void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
 
             std::string cellDesc = getCellDescription(obj, atk_object_get_role(obj));
             if(!cellDesc.empty()) {
-                RDKLOG_INFO("Table Cell Description = \"%s\"", cellDesc.c_str());
+                RDKLOG_VERBOSE("Table Cell Description = \"%s\"", cellDesc.c_str());
                 d.text = cellDesc + d.text;
             }
 
@@ -938,7 +945,7 @@ void RDKAt::urlChanged(std::string url)
     std::list<std::string>::iterator it = m_filter.begin();
     while(it != m_filter.end()) {
 
-        RDKLOG_INFO("Checking \"%s\" against \"%s\"", url.c_str(), (*it).c_str());
+        RDKLOG_VERBOSE("Checking \"%s\" against \"%s\"", url.c_str(), (*it).c_str());
         if((*it) == url || g_pattern_match_simple(("*"+(*it)+"*").c_str(), url.c_str())) {
             RDKLOG_ERROR("Found this URL \"%s\" in filter list, releasing TTS Resource", url.c_str());
             m_urlBlocked = true;
@@ -1005,7 +1012,7 @@ void ConfigureTTS(TTSConfiguration &config)
 
 void NotifyURLChange(std::string url, MediaVolumeControlCallback mediaVolumeControlCB, void *data)
 {
-    RDKLOG_INFO("Filter URL");
+    RDKLOG_VERBOSE("Filter URL");
     RDKAt::Instance().urlChanged(url);
     if(!RDKAt::Instance().isURLBlocked()) {
         RDKAt::Instance().m_mediaVolumeControlCB = mediaVolumeControlCB;
