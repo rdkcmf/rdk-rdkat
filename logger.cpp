@@ -39,6 +39,9 @@ static inline void sync_stdout()
 
 #ifdef USE_RDK_LOGGER
 
+const rdk_LogLevel levelMap[] =
+    {RDK_LOG_FATAL, RDK_LOG_ERROR, RDK_LOG_WARN, RDK_LOG_INFO, RDK_LOG_DEBUG, RDK_LOG_TRACE1};
+
 void logger_init()
 {
     sync_stdout();
@@ -52,9 +55,6 @@ void log(LogLevel level,
     int, // thread id is already handled by rdk_logger
     const char* format, ...)
 {
-    const rdk_LogLevel levelMap[] =
-        {RDK_LOG_FATAL, RDK_LOG_ERROR, RDK_LOG_WARN, RDK_LOG_INFO, RDK_LOG_DEBUG, RDK_LOG_TRACE1};
-
     const short kFormatMessageSize = 4096;
     // RDKLogger is backed with log4c which has its own default level
     // for filtering messages. Therefore, we don't check level here.
@@ -83,6 +83,11 @@ void log(LogLevel level,
         std::abort();
 }
 
+bool is_log_level_enabled(LogLevel level)
+{
+    return TRUE == rdk_dbg_enabled("LOG.RDK.RDKAT",levelMap[static_cast<int>(level)]);
+}
+
 #else
 
 static int gDefaultLogLevel = INFO_LEVEL;
@@ -93,6 +98,11 @@ void logger_init()
     const char* level = getenv("RDKAT_DEFAULT_LOG_LEVEL");
     if (level)
         gDefaultLogLevel = static_cast<LogLevel>(atoi(level));
+}
+
+bool is_log_level_enabled(LogLevel level)
+{
+    return gDefaultLogLevel >= level;
 }
 
 void log(LogLevel level,

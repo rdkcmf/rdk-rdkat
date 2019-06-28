@@ -37,6 +37,11 @@ enum LogLevel {FATAL_LEVEL = 0, ERROR_LEVEL, WARNING_LEVEL, INFO_LEVEL, VERBOSE_
 void logger_init();
 
 /**
+ * @brief Checks if logging is enabled for log level
+ */
+bool is_log_level_enabled(LogLevel level);
+
+/**
  * @brief Log a message
  * The function is defined by logging backend.
  * Currently 2 variants are supported: rdk_logger (USE_RDK_LOGGER),
