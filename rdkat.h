@@ -42,12 +42,10 @@ struct TTSConfiguration {
 // The callback takes the below params
 // data - an opaque pointer data received from the caller on NotifyURLChange()
 // volume - volume level ranging [0-1], 0-no volume, 1-full media volume
-// restore - a boolean specifying whether the media volume needs to be set or it needs to be reverted.
-// back to the old volume. When restore is true, the volume param will be ignored.
-typedef void (*MediaVolumeControlCallback)(void *data, float volume, bool restore);
+typedef void (*MediaVolumeControlCallback)(void *data, float volume);
 
 void Initialize();
-void EnableVoiceGuidance(bool enableTTS);
+void EnableVoiceGuidance(bool enableTTS, std::string &mode);
 void ConfigureTTS(TTSConfiguration &config);
 void NotifyURLChange(std::string url, MediaVolumeControlCallback mediaVolumeControlCB, void *data);
 void Uninitialize();
