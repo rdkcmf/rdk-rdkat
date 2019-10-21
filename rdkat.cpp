@@ -40,8 +40,6 @@
 #define PROPERTY_CHANGE "PropertyChange"
 #define STATE_CHANGED   "state-changed"
 
-#define CHECK_STR(a) (a?a:"")
-
 using namespace std;
 
 namespace RDK_AT {
@@ -212,10 +210,14 @@ gint RDKAt::KeyListener(AtkKeyEventStruct *event, gpointer data)
     return 0;
 }
 
+inline std::string checkNullAndReturnStr(char* temp){
+    return (temp != NULL)? temp : std::string();
+}
+
 inline void getAccessibilityInfo(AtkObject *obj, std::string &name, std::string &desc, std::string &role) {
-    name = atk_object_get_name(obj);
-    desc = atk_object_get_description(obj);
-    role = atk_role_get_name(atk_object_get_role(obj));
+    name = checkNullAndReturnStr(atk_object_get_name(obj));
+    desc = checkNullAndReturnStr(atk_object_get_description(obj));
+    role = checkNullAndReturnStr(atk_role_get_name(atk_object_get_role(obj)));
 }
 
 #define PRINT_HELPER(ss, c, key, value) do {\
@@ -304,14 +306,14 @@ std::string getCellDescription(AtkObject *cell, AtkRole role) {
     if(tableObj) {
         AtkObject *captionObj = atk_table_get_caption(tableObj);
         if(captionObj && (cell == pCell || tableObj != pTableObj))
-            caption = atk_object_get_name(captionObj);
+            caption = checkNullAndReturnStr(atk_object_get_name(captionObj));
     }
 
     // Retrieve Row Heading
     // Note : this is not the not Row Header element, but the accessible name of Row element
     std::string rowHeader;
     if(rowObj && (cell == pCell || rowObj != pRowObj)) {
-        rowHeader = atk_object_get_name(rowObj);
+       rowHeader = checkNullAndReturnStr(atk_object_get_name(rowObj));
     }
 
     // Remember Table information
