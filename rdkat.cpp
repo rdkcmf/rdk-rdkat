@@ -967,7 +967,8 @@ void RDKAt::urlChanged(std::string url)
 
                 // disable TTS on any blocked page, but don't disturb the
                 // configuration received from Receiver i.e m_enableTTS
-                m_ttsClient->enableTTS(false);
+                if(url != "about:blank")
+                    m_ttsClient->enableTTS(false);
             }
             return;
         }
