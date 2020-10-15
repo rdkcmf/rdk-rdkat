@@ -66,40 +66,32 @@ public:
     }
 
     void initialize(void);
+    void enableProcessing(bool enable);
+    void setVolumeControlCallback(MediaVolumeControlCallback cb, void *data);
     void uninitialize(void);
-    void acquireResource();
-    void releaseResource();
-    void enableVoiceGuidance(bool enableTTS, std::string &mode);
-    void configureTTS(TTSConfiguration &config);
-    void urlChanged(std::string url);
 
-    std::string url() { return m_url; }
-    bool isURLBlocked() { return m_urlBlocked; }
+    void createOrDestroySession();
+    bool processingEnabled() { return m_process; }
 
     // TTS Session Callbacks
     virtual void onTTSServerConnected() {
         RDKLOG_INFO("Connection to TTSManager got established");
         // Handle TTSEngine crash & reconnection
-        if(!isURLBlocked()) {
-            m_ttsClient->acquireResource(m_appId);
-            if(m_enableTTS) {
-                m_ttsClient->enableTTS(m_enableTTS);
-                m_ttsClient->setTTSConfiguration(m_config);
-            }
-
-            if(m_isAccessibilityMode && m_sessionId == 0) {
-                m_sessionId = m_ttsClient->createSession(m_appId, "WPE", this);
-            }
-        }
+        if(processingEnabled())
+            m_shouldCreateSession = true;
     }
+
     virtual void onTTSServerClosed() {
         RDKLOG_ERROR("Connection to TTSManager got closed!!!");
         m_sessionId = 0;
+        m_shouldCreateSession = false;
     }
+
     virtual void onTTSStateChanged(bool enabled) {
-        m_TTSEnabledStatus = enabled;
-        RDKLOG_INFO("TTS is %s", m_TTSEnabledStatus ? "enabled" : "disabled");
+        m_ttsEnabled = enabled;
+        RDKLOG_INFO("TTS is %s", m_ttsEnabled ? "enabled" : "disabled");
     }
+
     virtual void onTTSSessionCreated(uint32_t, uint32_t) {};
     virtual void onResourceAcquired(uint32_t, uint32_t) {};
     virtual void onResourceReleased(uint32_t, uint32_t) {};
@@ -126,25 +118,15 @@ private:
     m_listenerIds(NULL),
     m_focusTrackerId(0),
     m_keyEventListenerId(0),
-    m_accessibilityEnabled(false),
-    m_isAccessibilityMode(true),
-    m_enableTTS(false),
-    m_TTSEnabledStatus(false),
-    m_urlBlocked(true),
+    m_initialized(false),
+    m_process(false),
+    m_ttsEnabled(false),
     m_mediaVolumeUpdated(false),
-    m_appId(getpid()),
+    m_appId(this),
     m_sessionId(0),
+    m_shouldCreateSession(false),
     m_ttsClient(NULL) {
         m_ttsClient = TTS::TTSClient::create(this);
-        m_filter.push_back("htmldiag");
-        m_filter.push_back("about:blank");
-        m_filter.push_back("startupScreen.html");
-        m_filter.push_back("player-platform");
-
-        // TODO : RWI unconditionally enables accessibility, that should be fixed and remove this check here
-        char *env = getenv("WPE_ACCESSIBILITY");
-        if(env && (strncmp(env, "1", 1) == 0 || strncmp(env, "true", 4) == 0 || strncmp(env, "TRUE", 4) == 0))
-            m_accessibilityEnabled = true;
     }
     RDKAt(RDKAt &) {}
 
@@ -189,24 +171,19 @@ private:
     gint m_focusTrackerId;
     gint m_keyEventListenerId;
 
-    bool m_accessibilityEnabled;
-    bool m_isAccessibilityMode;
-    bool m_enableTTS;
-    bool m_TTSEnabledStatus;
-    TTS::Configuration m_config;
-    bool m_urlBlocked;
+    bool m_initialized;
+    bool m_process;
+    bool m_ttsEnabled;
     bool m_mediaVolumeUpdated;
     uint32_t m_appId;
     uint32_t m_sessionId;
-    std::string m_url;
-    std::list<std::string> m_filter;
+    bool m_shouldCreateSession;
     TTS::TTSClient *m_ttsClient;
 };
 
 gint RDKAt::KeyListener(AtkKeyEventStruct *event, gpointer data)
 {
     RDKLOG_TRACE("RDKAt::KeyListener()");
-
     return 0;
 }
 
@@ -330,22 +307,49 @@ std::string getCellDescription(AtkObject *cell, AtkRole role) {
     return res;
 }
 
+void RDKAt::createOrDestroySession()
+{
+    if(!m_ttsClient)
+        return;
+
+    if(processingEnabled()) {
+        if(m_sessionId == 0 && m_shouldCreateSession) {
+            m_sessionId = m_ttsClient->createSession(m_appId, "WPE", this);
+        }
+    } else {
+        if(m_sessionId != 0) {
+            if(m_mediaVolumeControlCBData)
+                m_mediaVolumeControlCB(m_mediaVolumeControlCBData, 1);
+
+            m_ttsClient->abort(m_sessionId);
+            m_ttsClient->destroySession(m_sessionId);
+            m_sessionId = 0;
+        }
+    }
+    m_shouldCreateSession = false;
+}
+
 void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
         std::string major, std::string minor,
         guint32 d1, guint32 d2, const void *val, int type)
 {
-    static bool enableDebugging = getenv("ENABLE_RDKAT_DEBUGGING");
+    RDKAt::Instance().createOrDestroySession();
 
-    // If WPE_ACCESSIBILITY is not set, return w/o further processing
-    // TODO : RWI unconditionally enables accessibility, that should be fixed and remove this check here
-    if(!RDKAt::Instance().m_accessibilityEnabled || !RDKAt::Instance().m_isAccessibilityMode)
+    static bool logProcessingError = true;
+    if(!RDKAt::Instance().processingEnabled()) {
+        if(logProcessingError)
+            RDKLOG_ERROR("Processing ARIA Accessibility events are not enabled");
+        logProcessingError = false;
         return;
+    }
+    logProcessingError = true;
 
     printEventInfo(klass, major, minor, d1, d2, val, type);
 
     // If TTS is not enabled, skip costly dom traversals as part of name & desc retrieval
+    static bool enableDebugging = getenv("ENABLE_RDKAT_DEBUGGING");
     static bool logDebuggingDisabled = true;
-    if(!RDKAt::Instance().m_TTSEnabledStatus) {
+    if(!RDKAt::Instance().m_ttsEnabled) {
         if(!enableDebugging) {
             if(logDebuggingDisabled)
                 RDKLOG_ERROR("Both TTS & RDK-AT Debugging are disabled, not fetching accessibility info");
@@ -354,15 +358,6 @@ void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
         }
     }
     logDebuggingDisabled = true;
-
-    static bool logURLBlocked = true;
-    if(RDKAt::Instance().isURLBlocked()) {
-        if(logURLBlocked)
-            RDKLOG_ERROR("URL \"%s\" is excluded from Accessibility Feature", RDKAt::Instance().url().c_str());
-        logURLBlocked = false;
-        return;
-    }
-    logURLBlocked = true;
 
     TTS::SpeechData d;
     bool speak = false;
@@ -841,6 +836,9 @@ guint RDKAt::addSignalListener(GSignalEmissionHook listener, const char *signal_
 void RDKAt::initialize()
 {
     RDKLOG_TRACE("RDKAt::initialize()");
+    if(m_initialized)
+        return;
+    m_initialized = true;
 
     GObject *gObject = (GObject*)g_object_new(ATK_TYPE_OBJECT, NULL);
     AtkObject *atkObject = atk_no_op_object_new(gObject);
@@ -907,79 +905,22 @@ void RDKAt::initialize()
     m_keyEventListenerId = atk_add_key_event_listener(KeyListener, NULL);
 }
 
-void RDKAt::acquireResource()
+void RDKAt::enableProcessing(bool enable)
 {
-    RDKLOG_INFO("Acquire TTS Resource");
-    if(m_ttsClient && !m_ttsClient->isActiveSession(m_sessionId))
-        m_ttsClient->acquireResource(m_appId);
+    RDKLOG_INFO("processingEnabled=%d, enable=%d", processingEnabled(), enable);
+    m_process = enable;
+    m_shouldCreateSession = enable;
+
+    createOrDestroySession();
+
+    if(m_sessionId)
+        m_ttsClient->abort(m_sessionId);
 }
 
-void RDKAt::releaseResource()
+void RDKAt::setVolumeControlCallback(MediaVolumeControlCallback cb, void *data)
 {
-    RDKLOG_INFO("Release TTS Resource");
-    if(m_ttsClient && m_ttsClient->isActiveSession(m_sessionId))
-        m_ttsClient->releaseResource(m_appId);
-}
-
-void RDKAt::enableVoiceGuidance(bool enableTTS, std::string &mode)
-{
-    if(m_ttsClient) {
-        m_enableTTS = enableTTS;
-        m_ttsClient->enableTTS(enableTTS);
-    }
-
-    m_isAccessibilityMode = (mode == "accessibility");
-}
-
-void RDKAt::configureTTS(TTSConfiguration &config)
-{
-    if(m_ttsClient) {
-        m_config.ttsEndPoint = config.m_ttsEndPoint;
-        m_config.ttsEndPointSecured = config.m_ttsEndPointSecured;
-        m_config.language = config.m_language;
-        m_config.voice = config.m_voice;
-        m_config.volume = config.m_volume;
-        m_config.rate = config.m_rate;
-
-        m_ttsClient->setTTSConfiguration(m_config);
-    }
-}
-
-void RDKAt::urlChanged(std::string url)
-{
-    RDKLOG_TRACE("URL : \"%s\"", url.c_str());
-
-    m_url = url;
-    m_urlBlocked = false;
-    std::list<std::string>::iterator it = m_filter.begin();
-    while(it != m_filter.end()) {
-        RDKLOG_VERBOSE("Checking \"%s\" against \"%s\"", url.c_str(), (*it).c_str());
-        if((*it) == url || g_pattern_match_simple(("*"+(*it)+"*").c_str(), url.c_str())) {
-            RDKLOG_ERROR("Found this URL \"%s\" in filter list, releasing TTS Resource", url.c_str());
-            m_urlBlocked = true;
-
-            if(m_ttsClient) {
-                m_ttsClient->releaseResource(m_appId);
-                if(m_sessionId) {
-                    m_ttsClient->destroySession(m_sessionId);
-                    m_sessionId = 0;
-                }
-
-                // disable TTS on any blocked page, but don't disturb the
-                // configuration received from Receiver i.e m_enableTTS
-                if(url != "about:blank")
-                    m_ttsClient->enableTTS(false);
-            }
-            return;
-        }
-        ++it;
-    }
-
-    if(m_ttsClient) {
-        m_ttsClient->acquireResource(m_appId);
-        if(m_isAccessibilityMode && m_sessionId == 0)
-            m_sessionId = m_ttsClient->createSession(m_appId, "WPE", this);
-    }
+    RDKAt::Instance().m_mediaVolumeControlCB = cb;
+    RDKAt::Instance().m_mediaVolumeControlCBData = data;
 }
 
 void RDKAt::uninitialize(void)
@@ -1012,31 +953,20 @@ void Initialize()
 {
     logger_init();
 
-    RDKLOG_TRACE("RDK_AT::Initialize()");
+    RDKLOG_INFO("RDK_AT::Initialize()");
     RDKAt::Instance().initialize();
 }
 
-void EnableVoiceGuidance(bool enableTTS, std::string &mode)
+void EnableProcessing(bool enable)
 {
-    RDKAt::Instance().enableVoiceGuidance(enableTTS, mode);
+    RDKLOG_INFO("RDK_AT::EnableProcessing()");
+    RDKAt::Instance().enableProcessing(enable);
 }
 
-void ConfigureTTS(TTSConfiguration &config)
+void SetVolumeControlCallback(MediaVolumeControlCallback cb, void *data)
 {
-    RDKAt::Instance().configureTTS(config);
-}
-
-void NotifyURLChange(std::string url, MediaVolumeControlCallback mediaVolumeControlCB, void *data)
-{
-    RDKLOG_VERBOSE("Filter URL");
-    RDKAt::Instance().urlChanged(url);
-    if(!RDKAt::Instance().isURLBlocked()) {
-        RDKAt::Instance().m_mediaVolumeControlCB = mediaVolumeControlCB;
-        RDKAt::Instance().m_mediaVolumeControlCBData = data;
-    } else {
-        RDKAt::Instance().m_mediaVolumeControlCB = NULL;
-        RDKAt::Instance().m_mediaVolumeControlCBData = NULL;
-    }
+    RDKLOG_INFO("RDK_AT::SetVolumeControlCallback()");
+    RDKAt::Instance().setVolumeControlCallback(cb, data);
 }
 
 void Uninitialize()

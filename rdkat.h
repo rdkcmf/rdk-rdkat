@@ -26,28 +26,15 @@
 
 namespace RDK_AT {
 
-struct TTSConfiguration {
-    TTSConfiguration() : m_volume(0), m_rate(0) {}
-    ~TTSConfiguration() {}
-
-    std::string m_ttsEndPoint;
-    std::string m_ttsEndPointSecured;
-    std::string m_language;
-    std::string m_voice;
-    double m_volume;
-    uint8_t m_rate;
-};
-
 // This callback is set from the caller to facilitate RDK_AT to control media volume on need.
 // The callback takes the below params
-// data - an opaque pointer data received from the caller on NotifyURLChange()
+// data - an opaque pointer data received from the caller on SetVolumeControlCallback()
 // volume - volume level ranging [0-1], 0-no volume, 1-full media volume
 typedef void (*MediaVolumeControlCallback)(void *data, float volume);
 
 void Initialize();
-void EnableVoiceGuidance(bool enableTTS, std::string &mode);
-void ConfigureTTS(TTSConfiguration &config);
-void NotifyURLChange(std::string url, MediaVolumeControlCallback mediaVolumeControlCB, void *data);
+void EnableProcessing(bool enable);
+void SetVolumeControlCallback(MediaVolumeControlCallback cb, void *data);
 void Uninitialize();
 
 }
