@@ -73,6 +73,13 @@ public:
     void createOrDestroySession();
     bool processingEnabled() { return m_process; }
 
+    void resetMediaVolume() {
+        if(RDKAt::Instance().m_mediaVolumeUpdated && RDKAt::Instance().m_mediaVolumeControlCB) {
+            RDKAt::Instance().m_mediaVolumeControlCB(RDKAt::Instance().m_mediaVolumeControlCBData, 1);
+            RDKAt::Instance().m_mediaVolumeUpdated = false;
+        }
+    }
+
     // TTS Session Callbacks
     virtual void onTTSServerConnected() {
         RDKLOG_INFO("Connection to TTSManager got established");
@@ -100,12 +107,19 @@ public:
         RDKLOG_INFO("appid=%d, sessionid=%d, speechid=%d, text=%s", appid, sessionid, data.id, data.text.c_str());
     }
 
+    virtual void onNetworkError(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        RDKLOG_INFO("appid=%d, sessionid=%d, speechid=%d", appId, sessionId, speechId);
+        resetMediaVolume();
+    }
+
+    virtual void onPlaybackError(uint32_t appId, uint32_t sessionId, uint32_t speechId) {
+        RDKLOG_INFO("appid=%d, sessionid=%d, speechid=%d", appId, sessionId, speechId);
+        resetMediaVolume();
+    }
+
     virtual void onSpeechComplete(uint32_t appid, uint32_t sessionid, TTS::SpeechData &data) {
         RDKLOG_INFO("appid=%d, sessionid=%d, speechid=%d, text=%s", appid, sessionid, data.id, data.text.c_str());
-        if(RDKAt::Instance().m_mediaVolumeUpdated && RDKAt::Instance().m_mediaVolumeControlCB) {
-            RDKAt::Instance().m_mediaVolumeControlCB(RDKAt::Instance().m_mediaVolumeControlCBData, 1);
-            RDKAt::Instance().m_mediaVolumeUpdated = false;
-        }
+        resetMediaVolume();
     }
 
     MediaVolumeControlCallback m_mediaVolumeControlCB;
