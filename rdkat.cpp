@@ -425,6 +425,9 @@ void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
             speak = true;
         }
     } else if(major == "load-complete") {
+        AtkRole atkrole = atk_object_get_role(obj);
+        if(atkrole == ATK_ROLE_DOCUMENT_FRAME)
+              return;
         getAccessibilityInfo(obj, name, desc, role);
         printAccessibilityInfo(name, desc, role);
 
