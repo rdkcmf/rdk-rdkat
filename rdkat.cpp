@@ -70,6 +70,7 @@ public:
     void setVolumeControlCallback(MediaVolumeControlCallback cb, void *data);
     void uninitialize(void);
 
+    void ensureTTSConnection();
     void createOrDestroySession();
     bool processingEnabled() { return m_process; }
 
@@ -139,9 +140,8 @@ private:
     m_appId(this),
     m_sessionId(0),
     m_shouldCreateSession(false),
-    m_ttsClient(NULL) {
-        m_ttsClient = TTS::TTSClient::create(this);
-    }
+    m_ttsClient(NULL),
+    m_connectionAttempt(0) { }
     RDKAt(RDKAt &) {}
 
     inline static void printEventInfo(std::string &klass, std::string &major, std::string &minor,
@@ -193,6 +193,7 @@ private:
     uint32_t m_sessionId;
     bool m_shouldCreateSession;
     TTS::TTSClient *m_ttsClient;
+    uint8_t m_connectionAttempt;
 };
 
 gint RDKAt::KeyListener(AtkKeyEventStruct *event, gpointer data)
@@ -321,6 +322,17 @@ std::string getCellDescription(AtkObject *cell, AtkRole role) {
     return res;
 }
 
+void RDKAt::ensureTTSConnection()
+{
+    if(!m_ttsClient) {
+        if(m_connectionAttempt > 0)
+            return;
+
+        m_connectionAttempt++;
+        m_ttsClient = TTS::TTSClient::create(this);
+    }
+}
+
 void RDKAt::createOrDestroySession()
 {
     if(!m_ttsClient)
@@ -347,8 +359,6 @@ void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
         std::string major, std::string minor,
         guint32 d1, guint32 d2, const void *val, int type)
 {
-    RDKAt::Instance().createOrDestroySession();
-
     static bool logProcessingError = true;
     if(!RDKAt::Instance().processingEnabled()) {
         if(logProcessingError)
@@ -359,6 +369,9 @@ void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
     logProcessingError = true;
 
     printEventInfo(klass, major, minor, d1, d2, val, type);
+
+    RDKAt::Instance().ensureTTSConnection();
+    RDKAt::Instance().createOrDestroySession();
 
     // If TTS is not enabled, skip costly dom traversals as part of name & desc retrieval
     static bool enableDebugging = getenv("ENABLE_RDKAT_DEBUGGING");
