@@ -144,11 +144,11 @@ private:
     m_connectionAttempt(0) { }
     RDKAt(RDKAt &) {}
 
-    inline static void printEventInfo(std::string &klass, std::string &major, std::string &minor,
+    inline static void printEventInfo(const std::string &klass, const std::string &major, const std::string &minor,
             guint32 d1, guint32 d2, const void *val, int type);
     inline static void printAccessibilityInfo(std::string &name, std::string &desc, std::string &role);
     static void HandleEvent(AtkObject *obj, std::string klass,
-            std::string major, std::string minor, guint32 d1, guint32 d2, const void *val, int type);
+            const gchar* major_raw, const gchar* minor_raw, guint32 d1, guint32 d2, const void *val, int type);
 
     static gint KeyListener(AtkKeyEventStruct *event, gpointer data);
     static void FocusTracker(AtkObject *accObj);
@@ -171,8 +171,6 @@ private:
     static gboolean TextInsertEventListener(GSignalInvocationHint *signal,
             guint param_count, const GValue *params, gpointer data);
     static gboolean TextRemoveEventListener(GSignalInvocationHint *signal,
-            guint param_count, const GValue *params, gpointer data);
-    static gboolean TextSelectionChangedEventListener(GSignalInvocationHint *signal,
             guint param_count, const GValue *params, gpointer data);
     static gboolean ChildrenChangedEventListener(GSignalInvocationHint *signal,
             guint param_count, const GValue *params, gpointer data);
@@ -219,7 +217,7 @@ inline void getAccessibilityInfo(AtkObject *obj, std::string &name, std::string 
      } \
  } while(0)
 
-inline static void RDKAt::printEventInfo(std::string &klass, std::string &major, std::string &minor,
+inline static void RDKAt::printEventInfo(const std::string &klass, const std::string &major, const std::string &minor,
         guint32 d1, guint32 d2, const void *val, int type) {
 
     if (!is_log_level_enabled(RDK_AT::VERBOSE_LEVEL))
@@ -356,7 +354,7 @@ void RDKAt::createOrDestroySession()
 }
 
 void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
-        std::string major, std::string minor,
+        const gchar* major_raw, const gchar* minor_raw,
         guint32 d1, guint32 d2, const void *val, int type)
 {
     static bool logProcessingError = true;
@@ -367,6 +365,9 @@ void RDKAt::HandleEvent(AtkObject *obj, std::string klass,
         return;
     }
     logProcessingError = true;
+
+    const std::string major = major_raw ? major_raw : "";
+    const std::string minor = minor_raw ? minor_raw : "";
 
     printEventInfo(klass, major, minor, d1, d2, val, type);
 
@@ -766,32 +767,6 @@ gboolean RDKAt::TextRemoveEventListener(GSignalInvocationHint *signal,
     return TRUE;
 }
 
-gboolean RDKAt::TextSelectionChangedEventListener(GSignalInvocationHint *signal,
-        guint param_count, const GValue *params, gpointer data)
-{
-    RDKLOG_TRACE("RDKAt::TextSelectionChangedEventListener()");
-
-    AtkObject *accObj;
-    GSignalQuery signalQuery;
-    const gchar *major, *minor;
-    gint d1 = 0, d2 = 0;
-
-    g_signal_query(signal->signal_id, &signalQuery);
-    major = signalQuery.signal_name;
-
-    accObj = ATK_OBJECT(g_value_get_object(&params[0]));
-    minor = g_quark_to_string(signal->detail);
-
-    if(G_VALUE_TYPE(&params[1]) == G_TYPE_INT)
-        d1 = g_value_get_int(&params[1]);
-
-    if(G_VALUE_TYPE(&params[2]) == G_TYPE_INT)
-        d2 = g_value_get_int(&params[2]);
-
-    HandleEvent(accObj, EVENT_OBJECT, major, minor, d1, d2, "", STRING);
-    return TRUE;
-}
-
 gboolean RDKAt::ChildrenChangedEventListener(GSignalInvocationHint *signal,
         guint param_count, const GValue *params, gpointer data)
 {
@@ -832,13 +807,14 @@ gboolean RDKAt::GenericEventListener(GSignalInvocationHint *signal,
 {
     RDKLOG_TRACE("RDKAt::GenericEventListener()");
 
-    const gchar *major;
+    const gchar *major, *minor;
     AtkObject *accObj;
     GSignalQuery signalQuery;
     int d1 = 0, d2 = 0;
 
     g_signal_query(signal->signal_id, &signalQuery);
     major = signalQuery.signal_name;
+    minor = g_quark_to_string(signal->detail);
 
     accObj = ATK_OBJECT(g_value_get_object(&params[0]));
 
@@ -848,7 +824,8 @@ gboolean RDKAt::GenericEventListener(GSignalInvocationHint *signal,
     if(param_count > 2 && G_VALUE_TYPE(&params[2]) == G_TYPE_INT)
         d2 = g_value_get_int(&params[2]);
 
-    HandleEvent(accObj, EVENT_OBJECT, major, "", d1, d2, 0, INT);
+    HandleEvent(accObj, EVENT_OBJECT, major, minor, d1, d2, 0, INT);
+
     return TRUE;
 }
 
@@ -926,7 +903,7 @@ void RDKAt::initialize()
     addSignalListener(TextChangedEventListener, "Atk:AtkText:text-changed");
     addSignalListener(GenericEventListener, "Atk:AtkText:text-caret-moved");
     addSignalListener(GenericEventListener, "Atk:AtkText:text-attributes-changed");
-    addSignalListener(TextSelectionChangedEventListener, "Atk:AtkText:text-selection-changed");
+    addSignalListener(GenericEventListener, "Atk:AtkText:text-selection-changed");
 
     addSignalListener(BoundsEventListener, "Atk:AtkComponent:bounds-changed");
     addSignalListener(GenericEventListener, "Atk:AtkSelection:selection-changed");
